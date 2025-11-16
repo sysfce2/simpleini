@@ -1,6 +1,11 @@
 var searchData=
 [
-  ['loaddata_25',['LoadData',['../classCSimpleIniTempl.html#a174244fd3e09ff78da05fe46be86e714',1,'CSimpleIniTempl::LoadData(const std::string &amp;a_strData)'],['../classCSimpleIniTempl.html#aa797cf47cec05906f07d5065882af4d3',1,'CSimpleIniTempl::LoadData(const char *a_pData, size_t a_uDataLen)']]],
-  ['loadfile_26',['LoadFile',['../classCSimpleIniTempl.html#aebb6e5fff76efc05ca6cc4b7b56481a3',1,'CSimpleIniTempl::LoadFile(const char *a_pszFile)'],['../classCSimpleIniTempl.html#a7ccb65e82fa347b42b59330968f826ae',1,'CSimpleIniTempl::LoadFile(FILE *a_fpFile)']]],
-  ['loadorder_27',['LoadOrder',['../structCSimpleIniTempl_1_1Entry_1_1LoadOrder.html',1,'CSimpleIniTempl::Entry']]]
+  ['installation_0',['Installation',['../md_README.html#autotoc_md3',1,'']]],
+  ['integration_1',['CMake Integration',['../md_README.html#autotoc_md5',1,'']]],
+  ['introduction_2',['INTRODUCTION',['../index.html#intro',1,'']]],
+  ['io_20streams_3',['IO STREAMS',['../index.html#iostreams',1,'']]],
+  ['isempty_4',['IsEmpty',['../classCSimpleIniTempl.html#a54bbe9727db17b368a0a75abd5e52d1c',1,'CSimpleIniTempl']]],
+  ['ismultikey_5',['IsMultiKey',['../classCSimpleIniTempl.html#a494b30fbdda5e78afdb25451743df935',1,'CSimpleIniTempl']]],
+  ['ismultiline_6',['IsMultiLine',['../classCSimpleIniTempl.html#afadd3818363ec7e66ca369ef486ec979',1,'CSimpleIniTempl']]],
+  ['isunicode_7',['IsUnicode',['../classCSimpleIniTempl.html#a40b4ee04251bd343ada5c4a4c508cd43',1,'CSimpleIniTempl']]]
 ];
