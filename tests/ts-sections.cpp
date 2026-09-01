@@ -332,3 +332,10 @@ TEST_F(TestSections, TestReset) {
   ASSERT_TRUE(ini.IsEmpty());
   ASSERT_FALSE(ini.SectionExists("section1"));
 }
+
+// SetValue must reject a NULL section instead of dereferencing it.
+TEST_F(TestSections, TestSetValueNullSection) {
+  const SI_Error rc = ini.SetValue(NULL, "key", "value");
+  ASSERT_EQ(rc, SI_FAIL);
+  ASSERT_TRUE(ini.IsEmpty());
+}

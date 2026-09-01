@@ -76,6 +76,22 @@ TEST_F(TestNumeric, TestGetLongValueInvalid) {
   ASSERT_EQ(result, 999);
 }
 
+// Overflowing integers must return the default, not a clamped LONG_MAX.
+TEST_F(TestNumeric, TestGetLongValueOverflow) {
+  std::string input = "[numbers]\n"
+                      "huge = 99999999999999999999\n"
+                      "neghuge = -99999999999999999999\n";
+
+  SI_Error rc = ini.LoadData(input);
+  ASSERT_EQ(rc, SI_OK);
+
+  long result = ini.GetLongValue("numbers", "huge", 42);
+  ASSERT_EQ(result, 42);
+
+  result = ini.GetLongValue("numbers", "neghuge", 43);
+  ASSERT_EQ(result, 43);
+}
+
 // Test GetLongValue with non-existent key
 TEST_F(TestNumeric, TestGetLongValueMissing) {
   std::string input = "[numbers]\n";
@@ -265,6 +281,21 @@ TEST_F(TestNumeric, TestExtremeValues) {
 
   result = ini.GetLongValue("numbers", "min", 0);
   ASSERT_EQ(result, LONG_MIN);
+}
+
+// SetDoubleValue must store large/small magnitudes without truncating the
+// ASCII conversion buffer.
+TEST_F(TestNumeric, TestDoubleExtremeValues) {
+  const double large = std::numeric_limits<double>::max();
+  const double small = std::numeric_limits<double>::min();
+
+  ASSERT_EQ(ini.SetDoubleValue("numbers", "large", large), SI_INSERTED);
+  ASSERT_EQ(ini.SetDoubleValue("numbers", "small", small), SI_INSERTED);
+
+  const double gotLarge = ini.GetDoubleValue("numbers", "large", 0.0);
+  const double gotSmall = ini.GetDoubleValue("numbers", "small", 0.0);
+  ASSERT_NEAR(gotLarge / large, 1.0, 1e-9);
+  ASSERT_NEAR(gotSmall / small, 1.0, 1e-9);
 }
 
 // Test numeric values with whitespace

@@ -432,3 +432,21 @@ TEST_F(TestMultiline, TestMultilineEmptyTag) {
   // Just verify it doesn't crash
   ASSERT_EQ(rc, SI_OK);
 }
+
+// A value that contains a line equal to the default save tag must still
+// round-trip; Save must pick a non-colliding end tag.
+TEST_F(TestMultiline, TestEndTagCollisionRoundTrip) {
+  const char *value = "before\nEND_OF_TEXT\nafter";
+  ASSERT_EQ(ini.SetValue("section", "key", value), SI_INSERTED);
+
+  std::string output;
+  SI_Error rc = ini.Save(output);
+  ASSERT_EQ(rc, SI_OK);
+
+  CSimpleIniA reload;
+  reload.SetUnicode();
+  reload.SetMultiLine(true);
+  rc = reload.LoadData(output);
+  ASSERT_EQ(rc, SI_OK);
+  ASSERT_STREQ(reload.GetValue("section", "key"), value);
+}

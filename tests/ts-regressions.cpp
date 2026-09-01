@@ -129,12 +129,79 @@ struct FailConvertFromStore {
 using FailingSetIni =
     CSimpleIniTempl<char, SI_NoCase<char>, FailConvertFromStore>;
 
+// Converter whose ConvertToStore succeeds only when the UTF-8 flag is set.
+// Used to detect Converter copy/assignment dropping SI_CONVERTER base state.
+struct Utf8FlagConvert {
+  bool m_bStoreIsUtf8;
+
+  Utf8FlagConvert() : m_bStoreIsUtf8(false) {}
+  explicit Utf8FlagConvert(bool a_bStoreIsUtf8)
+      : m_bStoreIsUtf8(a_bStoreIsUtf8) {}
+  Utf8FlagConvert(const Utf8FlagConvert &rhs)
+      : m_bStoreIsUtf8(rhs.m_bStoreIsUtf8) {}
+  Utf8FlagConvert &operator=(const Utf8FlagConvert &rhs) {
+    m_bStoreIsUtf8 = rhs.m_bStoreIsUtf8;
+    return *this;
+  }
+
+  size_t SizeFromStore(const char *a_pInputData, size_t a_uInputDataLen) {
+    (void)a_pInputData;
+    return a_uInputDataLen;
+  }
+
+  bool ConvertFromStore(const char *a_pInputData, size_t a_uInputDataLen,
+                        char *a_pOutputData, size_t a_uOutputDataSize) {
+    if (a_uInputDataLen > a_uOutputDataSize) {
+      return false;
+    }
+    memcpy(a_pOutputData, a_pInputData, a_uInputDataLen);
+    return true;
+  }
+
+  size_t SizeToStore(const char *a_pInputData) {
+    return strlen(a_pInputData) + 1;
+  }
+
+  bool ConvertToStore(const char *a_pInputData, char *a_pOutputData,
+                      size_t a_uOutputDataSize) {
+    if (!m_bStoreIsUtf8) {
+      return false;
+    }
+    const size_t uLen = strlen(a_pInputData) + 1;
+    if (uLen > a_uOutputDataSize) {
+      return false;
+    }
+    memcpy(a_pOutputData, a_pInputData, uLen);
+    return true;
+  }
+};
+
+using Utf8FlagIni = CSimpleIniTempl<char, SI_NoCase<char>, Utf8FlagConvert>;
+
 // Issue 5: SetLongValue must fail when storage conversion fails.
 TEST(SetValueRegression, SetLongValueFailsWhenConversionFails) {
   FailingSetIni ini;
   const SI_Error rc = ini.SetLongValue("section", "key", 42);
   ASSERT_EQ(rc, SI_FAIL);
   ASSERT_FALSE(ini.KeyExists("section", "key"));
+}
+
+// Converter copy/assignment must preserve the SI_CONVERTER base (UTF-8 flag).
+TEST(ConverterRegression, CopyPreservesUtf8Flag) {
+  Utf8FlagIni ini(true);
+  Utf8FlagIni::Converter original = ini.GetConverter();
+  ASSERT_TRUE(original.ConvertToStore("hello"));
+  ASSERT_STREQ(original.Data(), "hello");
+
+  Utf8FlagIni::Converter copied(original);
+  ASSERT_TRUE(copied.ConvertToStore("hello"));
+  ASSERT_STREQ(copied.Data(), "hello");
+
+  Utf8FlagIni mbcs(false);
+  Utf8FlagIni::Converter assigned = mbcs.GetConverter();
+  assigned = original;
+  ASSERT_TRUE(assigned.ConvertToStore("hello"));
+  ASSERT_STREQ(assigned.Data(), "hello");
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +355,11 @@ TEST(LoadDataRegression, DoesNotPartiallyMergeOnAddEntryFailure) {
   ASSERT_FALSE(ini.SectionExists("section0"));
   ASSERT_FALSE(ini.SectionExists("section100"));
   ASSERT_STREQ(ini.GetValue("existing", "key"), "value");
+
+  typename RegressionIni::TNamesDepend sections;
+  ini.GetAllSections(sections);
+  ASSERT_EQ(sections.size(), 1u);
+  ASSERT_STREQ(sections.front().pItem, "existing");
 }
 #else
 TEST(LoadDataRegression, DoesNotPartiallyMergeOnAddEntryFailure) {
@@ -321,4 +393,18 @@ TEST(SetValueRegression, RejectsOversizedValue) {
   const SI_Error rc = ini.SetValue("section", "key", huge.c_str());
   ASSERT_EQ(rc, SI_NOMEM);
   ASSERT_FALSE(ini.KeyExists("section", "key"));
+  // AddEntry must not leave an empty section behind after the value copy fails.
+  ASSERT_FALSE(ini.SectionExists("section"));
+}
+
+TEST(SetValueRegression, RejectsOversizedValueDoesNotLeaveNewSection) {
+  RegressionIni ini;
+  ASSERT_EQ(ini.LoadData("[existing]\nkey = value\n"), SI_OK);
+
+  std::string huge(SI_MAX_FILE_SIZE, 'x');
+  const SI_Error rc = ini.SetValue("newsection", "key", huge.c_str());
+  ASSERT_EQ(rc, SI_NOMEM);
+  ASSERT_FALSE(ini.SectionExists("newsection"));
+  ASSERT_TRUE(ini.SectionExists("existing"));
+  ASSERT_STREQ(ini.GetValue("existing", "key"), "value");
 }

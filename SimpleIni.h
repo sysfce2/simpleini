@@ -170,6 +170,9 @@
     - The maximum supported file size is 1 GiB (SI_MAX_FILE_SIZE). Files larger
       than this will be rejected with SI_FILE error to prevent excessive memory
       allocation and potential denial of service attacks.
+    - LoadFile() and LoadData(const char *, size_t) treat an embedded NUL byte
+      as end of text (content after it is discarded, SI_OK is still returned).
+      LoadData(std::istream&) instead rejects a NUL with SI_FAIL.
     - To load UTF-8 data on Windows 95, you need to use Microsoft Layer for
       Unicode, or SI_CONVERT_GENERIC, or SI_CONVERT_ICU.
     - SI_CONVERT_GENERIC provides locale-independent UTF-8 conversion inline;
@@ -242,6 +245,7 @@
 #endif
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -446,8 +450,10 @@ public:
     Converter(bool a_bStoreIsUtf8) : SI_CONVERTER(a_bStoreIsUtf8) {
       m_scratch.resize(1024);
     }
-    Converter(const Converter &rhs) { operator=(rhs); }
+    Converter(const Converter &rhs)
+        : SI_CONVERTER(rhs), m_scratch(rhs.m_scratch) {}
     Converter &operator=(const Converter &rhs) {
+      SI_CONVERTER::operator=(rhs);
       m_scratch = rhs.m_scratch;
       return *this;
     }
@@ -972,6 +978,8 @@ public:
   SI_Error SetValue(const SI_CHAR *a_pSection, const SI_CHAR *a_pKey,
                     const SI_CHAR *a_pValue, const SI_CHAR *a_pComment = NULL,
                     bool a_bForceReplace = false) {
+    if (!a_pSection)
+      return SI_FAIL;
     return AddEntry(a_pSection, a_pKey, a_pValue, a_pComment, a_bForceReplace,
                     true);
   }
@@ -1168,7 +1176,12 @@ private:
   /** Make a copy of the supplied string, replacing the original pointer */
   SI_Error CopyString(const SI_CHAR *&a_pString);
 
-  /** Undo m_data changes from a failed incremental LoadData. */
+  /** Undo m_data changes from a failed incremental LoadData.
+
+        Only sections and keys that were newly created by this LoadData call
+        are removed. Values updated on keys that already existed before the
+        failing entry are not restored.
+    */
   void UndoIncrementalLoadData(const TNamesDepend &a_oAddedSections,
                                const TNamesDepend &a_oAddedKeys);
 
@@ -1184,6 +1197,7 @@ private:
   bool IsMultiLineTag(const SI_CHAR *a_pData) const;
   bool IsMultiLineData(const SI_CHAR *a_pData) const;
   bool IsSingleLineQuotedValue(const SI_CHAR *a_pData) const;
+  bool MultiLineTextHasTag(const SI_CHAR *a_pText, const SI_CHAR *a_pTag) const;
   bool LoadMultiLineText(SI_CHAR *&a_pData, const SI_CHAR *&a_pVal,
                          const SI_CHAR *a_pTagName,
                          bool a_bAllowBlankLinesInComment = false) const;
@@ -1831,6 +1845,31 @@ bool CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::IsMultiLineData(
 }
 
 template <class SI_CHAR, class SI_STRLESS, class SI_CONVERTER>
+bool CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::MultiLineTextHasTag(
+    const SI_CHAR *a_pText, const SI_CHAR *a_pTag) const {
+  if (!a_pText || !a_pTag) {
+    return false;
+  }
+  const SI_CHAR *p = a_pText;
+  while (*p) {
+    const SI_CHAR *pEndOfLine = p;
+    while (*pEndOfLine && *pEndOfLine != '\n') {
+      ++pEndOfLine;
+    }
+    const std::basic_string<SI_CHAR> line(p,
+                                          static_cast<size_t>(pEndOfLine - p));
+    if (!IsLess(line.c_str(), a_pTag) && !IsLess(a_pTag, line.c_str())) {
+      return true;
+    }
+    p = pEndOfLine;
+    if (*p == '\n') {
+      ++p;
+    }
+  }
+  return false;
+}
+
+template <class SI_CHAR, class SI_STRLESS, class SI_CONVERTER>
 bool CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::
     IsSingleLineQuotedValue(const SI_CHAR *a_pData) const {
   // data needs quoting if it starts or ends with whitespace
@@ -2051,6 +2090,10 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::AddEntry(
     const SI_CHAR *a_pComment, bool a_bForceReplace, bool a_bCopyStrings) {
   SI_Error rc;
   bool bInserted = false;
+  bool bInsertedSection = false;
+  bool bCopiedComment = false;
+  bool bCopiedSection = false;
+  bool bCopiedKey = false;
 
   SI_ASSERT(!a_pComment || IsComment(*a_pComment));
 
@@ -2060,6 +2103,7 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::AddEntry(
     rc = CopyString(a_pComment);
     if (rc < 0)
       return rc;
+    bCopiedComment = true;
   }
 
   // create the section entry if necessary
@@ -2069,8 +2113,13 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::AddEntry(
     // string needs to last beyond the end of this function
     if (a_bCopyStrings) {
       rc = CopyString(a_pSection);
-      if (rc < 0)
+      if (rc < 0) {
+        if (bCopiedComment) {
+          DeleteString(a_pComment);
+        }
         return rc;
+      }
+      bCopiedSection = true;
     }
 
     // only set the comment if this is a section only entry
@@ -2084,6 +2133,7 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::AddEntry(
     std::pair<SectionIterator, bool> i = m_data.insert(oEntry);
     iSection = i.first;
     bInserted = true;
+    bInsertedSection = true;
   }
   if (!a_pKey) {
     // section only entries are specified with pItem as NULL
@@ -2131,14 +2181,38 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::AddEntry(
       // string needs to last beyond the end of this function
       // because we will be inserting the key next
       rc = CopyString(a_pKey);
-      if (rc < 0)
+      if (rc < 0) {
+        if (bInsertedSection) {
+          m_data.erase(iSection);
+        }
+        if (bCopiedSection) {
+          DeleteString(a_pSection);
+        }
+        if (bCopiedComment) {
+          DeleteString(a_pComment);
+        }
         return rc;
+      }
+      bCopiedKey = true;
     }
 
     // we always need a copy of the value
     rc = CopyString(a_pValue);
-    if (rc < 0)
+    if (rc < 0) {
+      if (bCopiedKey) {
+        DeleteString(a_pKey);
+      }
+      if (bInsertedSection) {
+        m_data.erase(iSection);
+      }
+      if (bCopiedSection) {
+        DeleteString(a_pSection);
+      }
+      if (bCopiedComment) {
+        DeleteString(a_pComment);
+      }
       return rc;
+    }
   }
 
   // create the key entry
@@ -2209,6 +2283,7 @@ long CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::GetLongValue(
   // handle the value as hex if prefaced with "0x"
   long nValue = a_nDefault;
   char *pszSuffix = szValue;
+  errno = 0;
   if (szValue[0] == '0' && (szValue[1] == 'x' || szValue[1] == 'X')) {
     if (!szValue[2])
       return a_nDefault;
@@ -2218,7 +2293,7 @@ long CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::GetLongValue(
   }
 
   // any invalid strings will return the default value
-  if (*pszSuffix) {
+  if (*pszSuffix || errno == ERANGE) {
     return a_nDefault;
   }
 
@@ -2293,9 +2368,9 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::SetDoubleValue(
   // convert to an ASCII string
   char szInput[64];
 #if __STDC_WANT_SECURE_LIB__ && !_WIN32_WCE
-  sprintf_s(szInput, "%f", a_nValue);
+  sprintf_s(szInput, "%.17g", a_nValue);
 #else  // !__STDC_WANT_SECURE_LIB__
-  snprintf(szInput, sizeof(szInput), "%f", a_nValue);
+  snprintf(szInput, sizeof(szInput), "%.17g", a_nValue);
 #endif // __STDC_WANT_SECURE_LIB__
 
   // convert to output text
@@ -2665,11 +2740,41 @@ SI_Error CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::Save(
           } else if (m_bAllowMultiLine && IsMultiLineData(iValue->pItem)) {
             // multi-line data needs to be processed specially to ensure
             // that we use the correct newline format for the current system
-            a_oOutput.Write("<<<END_OF_TEXT" SI_NEWLINE_A);
+            char szTag[64];
+            SI_CHAR szTagSi[64];
+            int nSuffix = 0;
+            for (;;) {
+              if (nSuffix == 0) {
+#if __STDC_WANT_SECURE_LIB__ && !_WIN32_WCE
+                sprintf_s(szTag, "END_OF_TEXT");
+#else
+                snprintf(szTag, sizeof(szTag), "END_OF_TEXT");
+#endif
+              } else {
+#if __STDC_WANT_SECURE_LIB__ && !_WIN32_WCE
+                sprintf_s(szTag, "END_OF_TEXT_%d", nSuffix);
+#else
+                snprintf(szTag, sizeof(szTag), "END_OF_TEXT_%d", nSuffix);
+#endif
+              }
+              size_t u = 0;
+              for (; szTag[u] && u + 1 < sizeof(szTagSi) / sizeof(szTagSi[0]);
+                   ++u) {
+                szTagSi[u] = static_cast<SI_CHAR>(szTag[u]);
+              }
+              szTagSi[u] = 0;
+              if (!MultiLineTextHasTag(iValue->pItem, szTagSi)) {
+                break;
+              }
+              ++nSuffix;
+            }
+            a_oOutput.Write("<<<");
+            a_oOutput.Write(szTag);
+            a_oOutput.Write(SI_NEWLINE_A);
             if (!OutputMultiLineText(a_oOutput, convert, iValue->pItem)) {
               return SI_FAIL;
             }
-            a_oOutput.Write("END_OF_TEXT");
+            a_oOutput.Write(szTag);
           } else {
             a_oOutput.Write(convert.Data());
           }
@@ -3177,6 +3282,9 @@ public:
     errno_t e = mbstowcs_s(&uBufSiz, NULL, 0, a_pInputData, a_uInputDataLen);
     return (e == 0) ? uBufSiz : (size_t)-1;
 #elif !defined(SI_NO_MBSTOWCS_NULL)
+    // mbstowcs requires a_pInputData to be NUL-terminated at or after
+    // a_pInputData + a_uInputDataLen. A length-only buffer without a
+    // trailing NUL may read past the supplied range.
     return mbstowcs(NULL, a_pInputData, a_uInputDataLen);
 #else
     // fall back processing for platforms that don't support a NULL dest to mbstowcs
