@@ -27,6 +27,8 @@ set(TEST_SOURCES
 	ts-bugfix.cpp
 	ts-noconvert.cpp
 	ts-quotes.cpp
+	ts-multikey.cpp
+	ts-keyonly.cpp
 	ts-roundtrip.cpp
 	ts-snippets.cpp
 	ts-utf8.cpp

@@ -129,15 +129,58 @@ TEST_F(TestMultiline, TestMultilineEndTagInContent) {
   ASSERT_STREQ(value, expected.c_str());
 }
 
-// Test SetValue creates multiline when value contains newlines
+#define MULTILINE "Line 1\nLine 2\nLine 3"
 TEST_F(TestMultiline, TestSetValueMultiline) {
-  std::string multilineValue = "Line 1\nLine 2\nLine 3";
-  SI_Error rc = ini.SetValue("section", "key", multilineValue.c_str());
+  SI_Error rc = ini.SetValue("section", "key", MULTILINE);
   ASSERT_EQ(rc, SI_INSERTED);
+  ASSERT_STREQ(ini.GetValue("section", "key"), MULTILINE);
 
-  const char *value = ini.GetValue("section", "key");
-  ASSERT_STREQ(value, multilineValue.c_str());
+  std::string output;
+  rc = ini.Save(output);
+  ASSERT_EQ(rc, SI_OK);
+  output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
+
+  std::string expect = "[section]\n"
+                       "key = <<<END_OF_TEXT\n" MULTILINE "\n"
+                       "END_OF_TEXT\n";
+  ASSERT_STREQ(expect.c_str(), output.c_str());
+
+  CSimpleIniA reload;
+  reload.SetUnicode();
+  reload.SetMultiLine(true);
+  rc = reload.LoadData(output);
+  ASSERT_EQ(rc, SI_OK);
+  ASSERT_STREQ(reload.GetValue("section", "key"), MULTILINE);
 }
+
+TEST_F(TestMultiline, TestSetValueNewlinesDisabled) {
+  CSimpleIniA ini2;
+  ini2.SetUnicode();
+  ini2.SetMultiLine(false);
+
+  ASSERT_EQ(ini2.SetValue("section", "key", MULTILINE), SI_INSERTED);
+
+  std::string output;
+  SI_Error rc = ini2.Save(output);
+  ASSERT_EQ(rc, SI_OK);
+  output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
+
+  // Newlines leak into the file and everything after the first line is lost.
+  std::string expect = "[section]\n"
+                       "key = Line 1\n"
+                       "Line 2\n"
+                       "Line 3\n";
+  ASSERT_STREQ(expect.c_str(), output.c_str());
+
+  CSimpleIniA reload;
+  reload.SetUnicode();
+  reload.SetMultiLine(false);
+  rc = reload.LoadData(output);
+  ASSERT_EQ(rc, SI_OK);
+  ASSERT_STREQ(reload.GetValue("section", "key"), "Line 1");
+  ASSERT_EQ(reload.GetValue("section", "Line 2"), nullptr);
+}
+#undef MULTILINE
 
 // Test multiline roundtrip
 TEST_F(TestMultiline, TestMultilineRoundtrip) {
@@ -194,18 +237,61 @@ TEST_F(TestMultiline, TestMultilineDisabled) {
 
   std::string input = "[section]\n"
                       "key = <<<END\n"
-                      "Line 1\n"
-                      "END\n";
+                      "line1 = stillhere\n"
+                      "END\n"
+                      "after = kept\n";
 
   SI_Error rc = ini2.LoadData(input);
   ASSERT_EQ(rc, SI_OK);
 
-  // Should be treated as regular value
-  const char *value = ini2.GetValue("section", "key");
-  ASSERT_NE(value, nullptr);
-  // Value should be "<<<END" or similar, not multiline
-  EXPECT_NE(std::string(value).find("<<<"), std::string::npos);
+  ASSERT_STREQ(ini2.GetValue("section", "key"), "<<<END");
+  ASSERT_STREQ(ini2.GetValue("section", "line1"), "stillhere");
+  ASSERT_STREQ(ini2.GetValue("section", "after"), "kept");
+  ASSERT_EQ(ini2.GetValue("section", "END"), nullptr);
 }
+
+#define SPACED " foo "
+TEST_F(TestMultiline, TestWhitespaceRoundTrip) {
+  ASSERT_EQ(ini.SetValue("section", "key", SPACED), SI_INSERTED);
+
+  std::string output;
+  SI_Error rc = ini.Save(output);
+  ASSERT_EQ(rc, SI_OK);
+  output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
+
+  std::string expect = "[section]\n"
+                       "key = <<<END_OF_TEXT\n" SPACED "\n"
+                       "END_OF_TEXT\n";
+  ASSERT_STREQ(expect.c_str(), output.c_str());
+
+  CSimpleIniA reload;
+  reload.SetUnicode();
+  reload.SetMultiLine(true);
+  rc = reload.LoadData(output);
+  ASSERT_EQ(rc, SI_OK);
+  ASSERT_STREQ(reload.GetValue("section", "key"), SPACED);
+}
+
+TEST_F(TestMultiline, TestWhitespaceDisabled) {
+  CSimpleIniA ini2;
+  ini2.SetUnicode();
+  ini2.SetMultiLine(false);
+
+  ASSERT_EQ(ini2.SetValue("section", "key", SPACED), SI_INSERTED);
+
+  std::string output;
+  SI_Error rc = ini2.Save(output);
+  ASSERT_EQ(rc, SI_OK);
+  output.erase(std::remove(output.begin(), output.end(), '\r'), output.end());
+
+  CSimpleIniA reload;
+  reload.SetUnicode();
+  reload.SetMultiLine(false);
+  rc = reload.LoadData(output);
+  ASSERT_EQ(rc, SI_OK);
+  ASSERT_STREQ(reload.GetValue("section", "key"), "foo");
+}
+#undef SPACED
 
 // Test multiline with tabs and spaces
 TEST_F(TestMultiline, TestMultilineWhitespace) {

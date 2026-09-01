@@ -155,6 +155,19 @@ TEST_F(TestRoundTrip, TestWithoutBOM) {
   ASSERT_STREQ(expected.c_str(), output.c_str());
 }
 
+TEST_F(TestRoundTrip, TestUnicodeLockedAfterLoad) {
+  ini.SetUnicode(true);
+  SI_Error rc = ini.LoadData("[section]\nk = v\n");
+  ASSERT_EQ(rc, SI_OK);
+
+  ini.SetUnicode(false);
+  ASSERT_TRUE(ini.IsUnicode());
+
+  rc = ini.Save(output, true);
+  ASSERT_EQ(rc, SI_OK);
+  ASSERT_EQ(output.compare(0, 3, SI_UTF8_SIGNATURE), 0);
+}
+
 TEST_F(TestRoundTrip, TestAllowKeyOnly1) {
   ini.SetAllowKeyOnly(false);
 

@@ -1637,6 +1637,7 @@ bool CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::FindEntry(
     SI_CHAR *&a_pData, const SI_CHAR *&a_pSection, const SI_CHAR *&a_pKey,
     const SI_CHAR *&a_pVal, const SI_CHAR *&a_pComment) const {
   a_pComment = NULL;
+  a_pVal = NULL;
 
   bool bHaveValue = false;
   SI_CHAR *pTrail = NULL;
@@ -1771,6 +1772,7 @@ bool CSimpleIniTempl<SI_CHAR, SI_STRLESS, SI_CONVERTER>::FindEntry(
         SkipNewLine(a_pData);
       }
       *pTrail = 0;
+      a_pVal = NULL;
     }
 
     // return the standard entry

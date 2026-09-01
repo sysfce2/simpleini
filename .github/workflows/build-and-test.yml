@@ -8,6 +8,13 @@ on:
   release:
     types: [published]
 
+# PR, master, and release do not cancel each other. A newer run in the
+# same group cancels the in-progress one (per PR, or the single master /
+# release slot).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'release' && 'release' || 'master' }}
+  cancel-in-progress: true
+
 jobs:
   Windows:
     runs-on: windows-latest
