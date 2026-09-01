@@ -286,16 +286,16 @@ TEST_F(TestNumeric, TestExtremeValues) {
 // SetDoubleValue must store large/small magnitudes without truncating the
 // ASCII conversion buffer.
 TEST_F(TestNumeric, TestDoubleExtremeValues) {
-  const double large = DBL_MAX;
-  const double small = DBL_MIN;
+  const double maxValue = DBL_MAX;
+  const double minValue = DBL_MIN;
 
-  ASSERT_EQ(ini.SetDoubleValue("numbers", "large", large), SI_INSERTED);
-  ASSERT_EQ(ini.SetDoubleValue("numbers", "small", small), SI_INSERTED);
+  ASSERT_EQ(ini.SetDoubleValue("numbers", "maxValue", maxValue), SI_INSERTED);
+  ASSERT_EQ(ini.SetDoubleValue("numbers", "minValue", minValue), SI_INSERTED);
 
-  const double gotLarge = ini.GetDoubleValue("numbers", "large", 0.0);
-  const double gotSmall = ini.GetDoubleValue("numbers", "small", 0.0);
-  ASSERT_NEAR(gotLarge / large, 1.0, 1e-9);
-  ASSERT_NEAR(gotSmall / small, 1.0, 1e-9);
+  const double gotMaxValue = ini.GetDoubleValue("numbers", "maxValue", 0.0);
+  const double gotMinValue = ini.GetDoubleValue("numbers", "minValue", 0.0);
+  ASSERT_NEAR(gotMaxValue / maxValue, 1.0, 1e-9);
+  ASSERT_NEAR(gotMinValue / minValue, 1.0, 1e-9);
 }
 
 // Test numeric values with whitespace
