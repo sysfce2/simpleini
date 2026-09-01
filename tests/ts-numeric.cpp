@@ -1,8 +1,8 @@
 #include "../SimpleIni.h"
 #include "gtest/gtest.h"
+#include <cfloat>
 #include <climits>
 #include <cmath>
-#include <limits>
 
 class TestNumeric : public ::testing::Test {
 protected:
@@ -286,8 +286,8 @@ TEST_F(TestNumeric, TestExtremeValues) {
 // SetDoubleValue must store large/small magnitudes without truncating the
 // ASCII conversion buffer.
 TEST_F(TestNumeric, TestDoubleExtremeValues) {
-  const double large = std::numeric_limits<double>::max();
-  const double small = std::numeric_limits<double>::min();
+  const double large = DBL_MAX;
+  const double small = DBL_MIN;
 
   ASSERT_EQ(ini.SetDoubleValue("numbers", "large", large), SI_INSERTED);
   ASSERT_EQ(ini.SetDoubleValue("numbers", "small", small), SI_INSERTED);
